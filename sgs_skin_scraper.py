@@ -10,6 +10,7 @@ sgs_skin_scraper — 从 Bwiki 三国杀 WIKI 批量下载皮肤图片
     python sgs_skin_scraper.py --faction 蜀,魏            # 仅下载指定势力
     python sgs_skin_scraper.py --quality 传说,限定,史诗   # 仅下载指定品质
     python sgs_skin_scraper.py --general 曹操,赵云        # 仅下载指定武将
+    python sgs_skin_scraper.py --group-by general         # 按武将名分文件夹
 
 数据来源: https://wiki.biligame.com/sgs/皮肤
 依赖: pip install requests
@@ -126,6 +127,12 @@ def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
         type=int,
         default=5,
         help="URL 解析阶段的内部并发数，默认 5（0=串行，兼容旧行为）",
+    )
+    parser.add_argument(
+        "--group-by",
+        default="faction",
+        choices=["faction", "general", "quality", "none"],
+        help="输出目录分组方式: faction=按势力, general=按武将, quality=按品质, none=不分组 (默认 faction)",
     )
     return parser.parse_args(argv)
 
@@ -682,9 +689,15 @@ def main(argv: Optional[List[str]] = None) -> None:
         if not url:
             continue
 
-        # 目标路径: output/势力/皮肤名-武将名-xx.png
-        faction_dir = skin["faction"] or "未知"
-        dest = output_root / faction_dir / local_name
+        # 目标路径: output/{分组}/皮肤名-武将名-xx.png
+        group = skin["faction"] or "未知"
+        if args.group_by == "general":
+            group = skin["general"] or "未知"
+        elif args.group_by == "quality":
+            group = skin["quality"] or "未知"
+        elif args.group_by == "none":
+            group = ""
+        dest = output_root / group / local_name if group else output_root / local_name
         downloads.append((file_title, url, dest))
 
     if not downloads:
