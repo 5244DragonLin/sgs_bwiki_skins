@@ -9,6 +9,7 @@ sgs_skin_scraper — 从 Bwiki 三国杀 WIKI 批量下载皮肤图片
     python sgs_skin_scraper.py --output D:/skins         # 指定输出目录
     python sgs_skin_scraper.py --faction 蜀,魏            # 仅下载指定势力
     python sgs_skin_scraper.py --quality 传说,限定,史诗   # 仅下载指定品质
+    python sgs_skin_scraper.py --general 曹操,赵云        # 仅下载指定武将
 
 数据来源: https://wiki.biligame.com/sgs/皮肤
 依赖: pip install requests
@@ -49,6 +50,7 @@ def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
   python sgs_skin_scraper.py --static-only                # 仅静态图
   python sgs_skin_scraper.py --dynamic-only               # 仅动态 GIF
   python sgs_skin_scraper.py --faction 蜀,吴 --quality 传说  # 蜀+吴传说皮
+  python sgs_skin_scraper.py --general 曹操,赵云             # 仅下载指定武将皮肤
 """,
     )
     parser.add_argument(
@@ -86,6 +88,11 @@ def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
         "--quality",
         default=None,
         help="筛选品质，逗号分隔，如: 传说,限定,史诗,原画",
+    )
+    parser.add_argument(
+        "--general",
+        default=None,
+        help="筛选武将，逗号分隔，如: 曹操,赵云,诸葛亮",
     )
     parser.add_argument(
         "--max-skins",
@@ -604,6 +611,7 @@ def main(argv: Optional[List[str]] = None) -> None:
     output_root = Path(args.output) if args.output else Path("output") / "sgs_skins"
     faction_filter = set(f.strip() for f in args.faction.split(",")) if args.faction else None
     quality_filter = set(q.strip() for q in args.quality.split(",")) if args.quality else None
+    general_filter = set(g.strip() for g in args.general.split(",")) if args.general else None
 
     session = create_session()
 
@@ -617,6 +625,8 @@ def main(argv: Optional[List[str]] = None) -> None:
         if faction_filter and s["faction"] not in faction_filter:
             continue
         if quality_filter and s["quality"] not in quality_filter:
+            continue
+        if general_filter and s["general"] not in general_filter:
             continue
         filtered.append(s)
 
