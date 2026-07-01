@@ -18,7 +18,7 @@
 - **增量缓存**：URL 缓存到 `.url_cache.json`，新皮肤才调 API，旧皮肤秒级跳过
 - **Cloudflare 反限流**：浏览器指纹头 + 随机 UA 轮换 + 渐进退避（30s→300s）+ 随机抖动
 - **三种资源类型**：静态 PNG、大图、动态 GIF，可按类型独立下载
-- **势力/品质筛选**：`--faction 蜀,魏` 或 `--quality 传说,限定` 精确过滤
+- **多维筛选**：按势力、品质、武将名任意组合过滤，按指定维度自动分目录
 - **并发下载**：`--concurrency 20` 控制并行数，自动跳过已存在文件
 - **自动归类**：输出按势力分目录，文件名格式 `{皮肤名}-{武将名}-{类型}.png|gif`
 
@@ -68,7 +68,7 @@ output/sgs_skins/
 ### 1. 克隆项目
 
 ```bash
-git clone https://github.com/yaenli/sgs_skin_scraper.git
+git clone https://github.com/5244DragonLin/sgs_skin_scraper.git
 cd sgs_skin_scraper
 ```
 
@@ -86,6 +86,12 @@ python sgs_skin_scraper.py
 
 # 只下蜀国传说皮
 python sgs_skin_scraper.py --faction 蜀 --quality 传说
+
+# 只下曹操和赵云的皮肤
+python sgs_skin_scraper.py --general 曹操,赵云
+
+# 按武将名分文件夹
+python sgs_skin_scraper.py --group-by general
 
 # 测试：先下 3 个看看
 python sgs_skin_scraper.py --max-skins 3
@@ -106,6 +112,7 @@ python sgs_skin_scraper.py [选项]
 |------|------|--------|
 | `--faction` | 势力筛选，逗号分隔（魏,蜀,吴,群,神） | 全部 |
 | `--quality` | 品质筛选，逗号分隔（传说,限定,史诗,原画） | 全部 |
+| `--general` | 武将筛选，逗号分隔（曹操,赵云,诸葛亮） | 全部 |
 | `--max-skins` | 最大下载皮肤数（0=不限制，用于测试） | `0` |
 
 ### 类型选项
@@ -121,6 +128,7 @@ python sgs_skin_scraper.py [选项]
 | 参数 | 说明 | 默认值 |
 |------|------|--------|
 | `-o, --output` | 输出根目录 | `output/sgs_skins` |
+| `--group-by` | 分组方式：faction(势力)/general(武将)/quality(品质)/none(不分组) | `faction` |
 | `-c, --concurrency` | 并发下载数 | `10` |
 | `--delay` | API 请求间隔（秒） | `1.0` |
 | `--no-cache` | 不使用 URL 缓存，强制重新解析 | 关闭 |
@@ -170,6 +178,11 @@ Fork → 创建分支 → 提交修改 → 发起 Pull Request。
 
 ## 📋更新日志
 
+### v1.1
+
+- 新增 `--general` 参数，支持按武将名筛选
+- 新增 `--group-by` 参数，支持按势力/武将/品质分文件夹
+
 ### v1.0
 
 - 首个可用版本
@@ -177,4 +190,3 @@ Fork → 创建分支 → 提交修改 → 发起 Pull Request。
 ## 📃许可证
 
 MIT
-*（内容由AI生成，仅供参考）*
