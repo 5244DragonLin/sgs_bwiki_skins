@@ -730,10 +730,12 @@ def main(argv: Optional[List[str]] = None) -> None:
                 failed_titles.append(file_title)
 
             total = ok + skip + fail
-            if total % 50 == 0 or total == len(downloads):
-                logger.info("进度: 成功 %d, 跳过 %d, 失败 %d", ok, skip, fail)
+            actual = ok + fail
+            if total == len(downloads):
+                logger.info("完成: 成功 %d, 跳过 %d, 失败 %d", ok, skip, fail)
+            elif actual > 0 and actual % 10 == 0:
+                logger.info("进度: 成功 %d, 失败 %d", ok, fail)
 
-    logger.info("完成: 成功 %d, 跳过 %d, 失败 %d", ok, skip, fail)
     logger.info("输出目录: %s", output_root.resolve())
 
     # 从缓存中移除下载失败的文件 URL，下次运行可重新解析
