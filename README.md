@@ -68,6 +68,11 @@ output/sgs_skins/
 ### 1. 克隆项目
 
 ```bash
+# Gitee 镜像（国内访问快）
+git clone https://gitee.com/yhl5244/sgs_skin_scraper.git
+cd sgs_skin_scraper
+
+# GitHub 原仓库
 git clone https://github.com/5244DragonLin/sgs_skin_scraper.git
 cd sgs_skin_scraper
 ```
