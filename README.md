@@ -22,6 +22,7 @@
 - **多维筛选**：按势力、品质、武将名任意组合过滤，按指定维度自动分目录
 - **品质分级下载**：低品质（原画/普通/稀有/史诗）跳过不存在的文件类型，日志干净、请求经济
 - **皮肤故事与台词爬取**：可选同时爬取每个皮肤的故事文本和语音台词，保存为结构化 JSON
+- **语音音频下载**：基于 BWIKI 前端拼音转换算法推导官方音频直链，自动下载台词对应 .mp3 语音文件
 - **双策略元数据解析**：先尝试 raw Wikitext 快速解析，纯模板页面（经典皮肤）自动回退 HTML 渲染解析
 - **全流程进度条**：URL 解析、图片下载、元数据爬取三阶段均使用 tqdm 进度条，替代原始逐行日志
 - **并发下载**：`--concurrency 20` 控制并行数，自动跳过已存在文件
@@ -52,36 +53,61 @@ $ python sgs_bwiki_skins.py -o E:/三国杀皮肤/BWIKI
 
 ```text
 output/sgs_skins/
-├── .url_cache.json          ← URL 解析缓存
-├── metadata.json            ← 皮肤故事+台词（--with-metadata）
-├── general_factions.json    ← 武将→势力映射缓存
-├── 蜀/                      ← 按势力自动归类
+├── .url_cache.json              ← URL 解析缓存
+├── metadata.json                ← 皮肤故事+台词+音频直链（--with-metadata --with-audio）
+├── general_factions.json        ← 武将→势力映射缓存
+├── 蜀/                          ← 按势力自动归类
 ├── 魏/
 │   ├── 惊鸿倩影-曹金玉-静态.png
 │   ├── 惊鸿倩影-曹金玉-大图.png
 │   ├── 惊鸿倩影-曹金玉-动态.gif
-│   ├── 经典形象-曹金玉.png   ← 原画仅1文件
-│   └── 慧光玉颜-曹金玉-静态.png  ← 史诗仅静态
+│   ├── 经典形象-曹金玉.png      ← 原画仅1文件
+│   ├── 慧光玉颜-曹金玉-静态.png ← 史诗仅静态
+│   ├── 惊鸿倩影-曹金玉-audio/      ← 音频文件（--download-audio）
+│   │   ├── 隅泣_01.mp3
+│   │   ├── 隅泣_02.mp3
+│   │   ├── 善身_01.mp3
+│   │   ├── 善身_02.mp3
+│   │   ├── 娴静_01.mp3
+│   │   ├── 娴静_02.mp3
+│   │   └── 阵亡_01.mp3
+│   ├── 慧光玉颜-曹金玉-audio/
+│   │   └── ...
 ├── 吴/
 ├── 群/
 └── 神/
 ```
 
-使用 `--with-metadata` 后，`metadata.json` 内容示例：
+使用 `--with-metadata --with-audio` 后，`metadata.json` 内容示例：
 
 ```json
 {
   "惊鸿倩影*曹金玉": {
-    "story": "金乡公主曹金玉近日有些闷闷不乐。人人都道自己得了一桩天赐的好婚事...",
+    "story": "金乡公主曹金玉近日有些闷闷不乐...",
+    "quality": "传说",
+    "所属收藏册": "喜乐锦年",
+    "画师": "DH",
+    "静态获取方式": "累计参与新春夺宝120次（消耗新春夺宝券*600）",
+    "动态获取方式": "累计消费达到88888元宝",
     "voice_lines": {
       "隅泣": ["泪眼婆娑泣，伊人憔悴消。", "柔情愁肠断，寂寞梧桐落。"],
       "善身": ["天子之家，需守心静身。", "心清则明，积善则安。"],
       "娴静": ["娴雅淑静，冰清玉洁。", "媖娴美好，典雅温蕴。"],
       "阵亡": ["余香空留此，玉指轻揉散。"]
+    },
+    "audio": {
+      "隅泣": [
+        "https://web.sanguosha.com/10/pc/res/assets/runtime/voice/skin/caojinyu02/CaoJinYu_YuQi_01.mp3",
+        "https://web.sanguosha.com/10/pc/res/assets/runtime/voice/skin/caojinyu02/CaoJinYu_YuQi_02.mp3"
+      ],
+      "善身": ["https://web.sanguosha.com/10/pc/res/assets/runtime/voice/skin/caojinyu02/CaoJinYu_ShanShen_01.mp3"],
+      "阵亡": ["https://web.sanguosha.com/10/pc/res/assets/runtime/voice/skin/caojinyu02/CaoJinYu_Dead.mp3"]
     }
   }
 }
 ```
+
+注意：`quality`、`所属收藏册`、`画师`、`上线时间`、`静态获取方式`、`动态获取方式` 自动从皮肤页面抓取，字段值为空时自动省略。`audio` 中的 URL 为官方直链，可直接用于播放或下载。
 
 ## 🚀快速开始
 
@@ -121,6 +147,18 @@ python sgs_bwiki_skins.py --group-by general
 # 同时爬取皮肤故事和台词
 python sgs_bwiki_skins.py --general 曹金玉 --with-metadata
 
+# 写入语音音频直链到 metadata.json（需与 --with-metadata 共用）
+python sgs_bwiki_skins.py --general 谋关羽 --with-metadata --with-audio
+
+# 仅下载语音音频文件（不写 metadata.json）
+python sgs_bwiki_skins.py --general 谋关羽 --download-audio
+
+# 写入直链 + 下载音频
+python sgs_bwiki_skins.py --general 谋关羽 --with-metadata --with-audio --download-audio
+
+# 强制全量刷新元数据（忽略已有缓存）
+python sgs_bwiki_skins.py --with-metadata --refresh-metadata
+
 # 测试：先下 3 个看看
 python sgs_bwiki_skins.py --max-skins 3
 
@@ -156,6 +194,9 @@ python sgs_bwiki_skins.py [选项]
 | 参数 | 说明 | 默认值 |
 |------|------|--------|
 | `--with-metadata` | 同时爬取皮肤故事和皮肤台词，保存为 `metadata.json` | 关闭 |
+| `--with-audio` | 在 `metadata.json` 中写入语音台词对应的官方音频直链（需与 `--with-metadata` 共用） | 关闭 |
+| `--download-audio` | 下载语音台词对应的 .mp3 音频文件到 `audio/` 子目录；可与 `--with-audio` 组合使用 | 关闭 |
+| `--refresh-metadata` | 强制重新爬取全部皮肤元数据，忽略已有 metadata.json（配合 `--with-metadata` 使用） | 关闭 |
 
 ### 输出选项
 
@@ -173,7 +214,7 @@ python sgs_bwiki_skins.py [选项]
 
 ```text
 sgs_bwiki_skins/
-├── sgs_bwiki_skins.py    # 主脚本（单文件，无外部模块依赖）
+├── sgs_bwiki_skins.py    # 主脚本（基于 requests + pypinyin）
 ├── requirements.txt        # pip install -r requirements.txt
 ├── README.md
 ├── LICENSE
@@ -202,19 +243,46 @@ sgs_bwiki_skins/
 
 这是品质分级策略——普通/稀有/史诗品质的皮肤一般没有独立的大图和动态图，脚本不生成无效文件请求以节省时间。传说/限定品质则会同时下载大图和动态（如有）。
 
+**--with-audio 下载的是哪个来源的音频？**
+
+语音音频来自三国杀官方服务器 `web.sanguosha.com`。URL 通过 BWIKI 页面中 `bikit-audio` 元素的 `data-src` 属性，经拼音转换算法推导而成。音频文件命名规则为 `{技能名}_{序号}.mp3`，存放在 `{输出目录}/{分组}/{皮肤名}-{武将名}-audio/` 下。
+
+**--with-audio 和 --with-metadata 有什么区别？**
+
+`--with-metadata` 只爬取故事文本和台词文字内容；`--with-audio` 将官方音频直链写入 `metadata.json`（需与 `--with-metadata` 共用）；`--download-audio` 将 .mp3 文件下载到磁盘。三者可任意组合：仅记录直链不下载，或仅下载不记录。
+
+**--download-audio 和 --with-audio 同时使用会重复爬取吗？**
+
+不会。当 `--with-metadata --with-audio` 先运行时，音频直链已写入 `metadata.json`，`--download-audio` 阶段会复用元数据结果，不会重复请求皮肤页面。
+
 ## 🤝贡献
 
 欢迎提 Issue 和 PR！
 
 ### 已知问题 / 待改进点
 
+- [x] 战场荣耀/战场绝版系列皮肤名带赛季后缀 `(S19)` 等，SMW 返回的所属武将去掉了后缀，导致 key 冲突被覆盖 — **已修复**：改用 SMW 原始页面标题作为 key，保留赛季后缀区分不同版本。
+- [x] 部分皮肤有"动态登场"（动态入场动画）文件类型（如 `战场绝版-徐氏-动态登场(S19).gif`），目前仅下载静态/大图/动态三种，未支持动态登场 — **已修复**：形态含"动态"时额外生成 `动态登场.gif` 文件。
+- [x] 增量更新模式下，如果 WIKI 后续更新了皮肤的所属收藏册、画师、获取方式等信息（如某皮肤最初不在收藏册内，后来被加入），metadata 中的旧字段不会自动刷新。 — **已修复**：使用 `--refresh-metadata` 参数可强制全量重新爬取。
 - [ ] BWIKI 中缺失大部分低品质皮肤（普通、稀有等），需要额外寻找数据源。
+- [ ] 部分皮肤的语音音频在官方服务器上不存在（返回 404），此时 `--download-audio` 会自动跳过。
+- [ ] 低画质皮肤、GIF 画质增强。
 
 ### 贡献流程
 
 Fork → 创建分支 → 提交修改 → 发起 Pull Request。
 
 ## 📋更新日志
+
+### v1.1
+- 新增 `--with-audio` 参数：在 metadata.json 中写入官方音频直链（需与 `--with-metadata` 共用）
+- 新增 `--download-audio` 参数：下载语音台词对应的官方 .mp3 音频文件，与 `--with-audio` 分离，可独立使用
+- `--with-audio` 和 `--download-audio` 可组合使用，实现"先记直链再下载"的完整流程
+- metadata.json 自动保存：每爬取 100 条即写盘一次，避免中途崩溃丢数据
+- metadata.json 增量更新：自动复用已有元数据，只抓取新增或缺失的皮肤，不再全量覆盖
+- metadata.json 新增字段：`品质`、 `所属收藏册`、`画师`、`上线时间`、`静态获取方式`、`动态获取方式`，空字段自动省略
+- 修复战场荣耀/战场绝版系列赛季后缀 key 冲突：改用 SMW 原始页面标题作为 metadata key，`战场绝版*徐氏(S19)` 与 `战场绝版*徐氏(S9)` 不再被互相覆盖
+- 新增 `--refresh-metadata` 参数：强制全量重新爬取元数据，忽略已有缓存
 
 ### v1.0
 
@@ -227,6 +295,11 @@ Fork → 创建分支 → 提交修改 → 发起 Pull Request。
 | 支付宝 | 微信 |
 |--------|------|
 | ![支付宝](https://gitee.com/yhl5244/images/raw/master/donate_alipay.jpg) | ![微信](https://gitee.com/yhl5244/images/raw/master/donate_wechat.jpg) |
+
+## ⚠️免责声明
+
+本工具仅供学习交流使用，不得用于任何违反法律法规或侵犯第三方权益的用途。
+因使用本工具产生的一切后果由使用者自行承担，作者不承担任何法律责任。
 
 ## 📃许可证
 

@@ -38,6 +38,11 @@ try:
 except ImportError:
     tqdm = None  # type: ignore
 
+try:
+    from pypinyin import pinyin as _ppy, Style as _PStyle
+except ImportError:
+    _ppy = None  # type: ignore
+
 logger = logging.getLogger("bwiki_sgs")
 
 
@@ -139,6 +144,21 @@ def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
         "--with-metadata",
         action="store_true",
         help="同时爬取皮肤故事和皮肤台词，保存为 metadata.json",
+    )
+    parser.add_argument(
+        "--with-audio",
+        action="store_true",
+        help="在 metadata.json 中写入语音台词对应的官方音频直链（需与 --with-metadata 共用）",
+    )
+    parser.add_argument(
+        "--download-audio",
+        action="store_true",
+        help="下载语音台词对应的音频文件（.mp3），与 --with-audio 共用时先写入直链再下载",
+    )
+    parser.add_argument(
+        "--refresh-metadata",
+        action="store_true",
+        help="强制重新爬取全部皮肤元数据，忽略已有 metadata.json（配合 --with-metadata 使用）",
     )
     return parser.parse_args(argv)
 
@@ -308,12 +328,22 @@ def _fetch_classic_image_url(session: requests.Session, general_name: str) -> st
 def _parse_voice_lines(raw_text: str) -> Dict[str, List[str]]:
     """从皮肤页 Wikitext 中解析台词。
 
-    Wikitext 格式:
-        {{新版台词|隅泣:line1./line2.;善身:line1./line2.;阵亡:line.|NN}}
+    Wikitext 格式（两种变体）:
+        {{新版台词|隅泣:line1./line2.;善身:line1.;阵亡:line.|NN}}   ← 带编号参数
+        {{新版台词|隅泣:line1./line2.;善身:line1.;阵亡:line.}}        ← 无编号参数
+
+    修正: 原正则 .+? + | 遇到模板无尾部 |NN 时，会吞到下一个字段行，
+    导致 <!-- 获取方式 --> 等污染混入结果。
+
     Returns:
         {"隅泣": ["line1.", "line2."], "善身": [...], "阵亡": ["line."]}
     """
-    m = re.search(r'\{\{新版台词\|(.+?)\|', raw_text, re.DOTALL)
+    # 匹配两种格式: {{新版台词|...|NN}} 或 {{新版台词|...}}
+    m = re.search(r'\{\{新版台词\|'                     # 开头
+                  r'(.+?)'                              # 内容（非贪婪）
+                  r'(?:\|[^}]*)?'                       # 可选的 |NN 尾部参数
+                  r'\}\}'                               # 模板结束
+                  , raw_text, re.DOTALL)
     if not m:
         return {}
 
@@ -324,11 +354,75 @@ def _parse_voice_lines(raw_text: str) -> Dict[str, List[str]]:
         if ':' not in part:
             continue
         skill, lines_text = part.split(':', 1)
+        # 清理行中混入的模板残余和编辑器注释
+        # 常见的污染模式: #fanchou01/fanchou_xxx, }}、<!-- ... -->
+        lines_text = re.sub(r'[#＃][\w#/]+.*', '', lines_text)  # #fanchou... 等锚点
+        lines_text = re.sub(r'\}\}', '', lines_text)             # 残留 }}
+        lines_text = re.sub(r'<!--.*?-->', '', lines_text)       # HTML 注释
+        lines_text = re.sub(r'\|', '', lines_text)               # 残留管道符
+        lines_text = lines_text.strip()
+
         lines = [l.strip() for l in lines_text.split('/') if l.strip()]
         if lines:
             result[skill.strip()] = lines
 
     return result
+
+
+def _parse_field_from_raw(raw_text: str, field: str) -> str:
+    """从皮肤页 Wikitext 提取指定字段值（单行字段）。
+
+    支持字段: 品质、所属收藏册、画师、静态获取方式、动态获取方式
+    这些字段均为单行，用 [^\n|]* 确保不会吞到下一行。
+    """
+    m = re.search(r'\|' + re.escape(field) + r'=([^\n|]*)', raw_text)
+    if not m:
+        return ""
+    return m.group(1).strip()
+
+
+def _parse_field_from_html(html: str, field: str) -> str:
+    """从渲染后的 HTML 中提取指定字段值。
+
+    处理两种 HTML 结构:
+      - div 结构: 字段名</div><div>值</div> 或 字段名</div><div><a>值</a></div>
+      - b  结构: <b>字段名</b>：值
+    """
+    # div 结构: 字段名</div><div>值</div>（可能有内层 <a> 标签）
+    m = re.search(
+        re.escape(field) + r'</div><div>(?:<a[^>]*>)?([^<]+)',
+        html,
+    )
+    if m:
+        return m.group(1).strip()
+
+    # b 结构: <b>字段名</b>：值<br /> 或 <b>字段名</b>：值</p>
+    m = re.search(
+        r'<b>' + re.escape(field) + r'</b>\s*[：:]?\s*(.*?)(?:<br\s*/?>|</p>|</div>)',
+        html,
+        re.DOTALL,
+    )
+    if m:
+        return m.group(1).strip()
+
+    return ""
+
+
+def _parse_quality_from_raw(raw_text: str) -> str:
+    return _parse_field_from_raw(raw_text, "品质")
+
+
+def _parse_quality_from_html(html: str) -> str:
+    return _parse_field_from_html(html, "品质")
+
+
+# 从皮肤页提取的附加信息字段
+_SKIN_INFO_FIELDS = ["所属收藏册", "画师", "上线时间", "静态获取方式", "动态获取方式"]
+
+
+def _skin_key(skin: dict) -> str:
+    """统一构建皮肤标识 key，优先使用 SMW 原始标题以保留赛季后缀。"""
+    return skin.get("smw_title") or f"{skin['skin_name']}*{skin['general']}"
 
 
 def _parse_skin_story(raw_text: str) -> str:
@@ -343,50 +437,86 @@ def _parse_skin_story(raw_text: str) -> str:
     story = m.group(1).strip()
     # 替换 <br> 为换行，清理空格
     story = re.sub(r'<br\s*/?>', '\n', story)
+    # 去除残留的 HTML 标签（如 <poem>、</poem>、<div> 等）
+    story = re.sub(r'<[^>]+>', '', story)
     story = re.sub(r'\n{3,}', '\n\n', story)
     return story.strip()
 
 
-def fetch_skin_metadata(session: requests.Session, skin: dict) -> dict:
-    """爬取单个皮肤页面的故事和台词。
+def fetch_skin_metadata(session: requests.Session, skin: dict,
+                        with_audio: bool = False) -> dict:
+    """爬取单个皮肤页面的故事、台词和（可选）音频 URL。
 
     分两步：
-    1. 优先尝试 raw Wikitext（常规皮肤快速解析）
+    1. 优先尝试 raw Wikitext（常规皮肤快速解析，若无音频需求）
     2. raw 为纯模板（如 {{初始皮肤}}）则回退到渲染 HTML 解析
 
+    Args:
+        with_audio: 为 True 时强制使用 HTML 解析以获取 bikit-audio data-src
+
     Returns:
-        {"story": "...", "voice_lines": {"隅泣": [...], "阵亡": [...]}}
+        {"story": "...", "voice_lines": {"隅泣": [...], ...},
+         "audio": {"隅泣": ["url1.mp3", "url2.mp3"], ...}}  # 仅 with_audio=True 时有
     """
-    page_title = skin.get("skin_name", "") + "*" + skin.get("general", "")
+    # 优先用 SMW 原始标题作为页面标识（保留战场绝版等赛季后缀）
+    page_title = skin.get("smw_title") or (skin.get("skin_name", "") + "*" + skin.get("general", ""))
 
-    # 策略 1：从 raw Wikitext 解析（常规皮肤）
-    raw_url = (
-        "https://wiki.biligame.com/sgs/index.php"
-        f"?title={urllib.parse.quote(page_title)}&action=raw"
-    )
-    try:
-        r = session.get(raw_url, timeout=30)
-        if r.status_code == 200:
-            raw_text = r.text
-            # 检查是否包含实际数据（非纯模板）
-            if '|皮肤故事=' in raw_text or '{{新版台词|' in raw_text:
-                return {
-                    "story": _parse_skin_story(raw_text),
-                    "voice_lines": _parse_voice_lines(raw_text),
-                }
-    except Exception as e:
-        logger.debug("皮肤页 raw 请求失败 %s: %s", page_title, e)
+    # 需从页面提取的额外字段
+    EXTRA_FIELDS = ["所属收藏册", "画师", "上线时间", "静态获取方式", "动态获取方式"]
 
-    # 策略 2：从渲染后的 HTML 解析（初始皮肤模板等经典皮肤）
+    def _build_result(story_val, voice_lines_val, quality_val, html_for_fields=None, raw_for_fields=None):
+        r: dict = {"story": story_val, "voice_lines": voice_lines_val}
+        if quality_val:
+            r["quality"] = quality_val
+        for f in EXTRA_FIELDS:
+            val = ""
+            if raw_for_fields is not None:
+                val = _parse_field_from_raw(raw_for_fields, f)
+            if not val and html_for_fields is not None:
+                val = _parse_field_from_html(html_for_fields, f)
+            if val:
+                r[f] = val
+        return r
+
+    if not with_audio:
+        # 策略 1：从 raw Wikitext 解析（常规皮肤）
+        raw_url = (
+            "https://wiki.biligame.com/sgs/index.php"
+            f"?title={urllib.parse.quote(page_title)}&action=raw"
+        )
+        try:
+            r = session.get(raw_url, timeout=30)
+            if r.status_code == 200:
+                raw_text = r.text
+                if '|皮肤故事=' in raw_text or '{{新版台词|' in raw_text:
+                    result = _build_result(
+                        story_val=_parse_skin_story(raw_text),
+                        voice_lines_val=_parse_voice_lines(raw_text),
+                        quality_val=_parse_quality_from_raw(raw_text),
+                        raw_for_fields=raw_text,
+                    )
+                    return result
+        except Exception as e:
+            logger.debug("皮肤页 raw 请求失败 %s: %s", page_title, e)
+
+    # 策略 2：从渲染后的 HTML 解析（含音频 data-src）
     html_url = f"https://wiki.biligame.com/sgs/{urllib.parse.quote(page_title)}"
     try:
         r = session.get(html_url, timeout=30)
         if r.status_code == 200:
             html = r.text
             story = _parse_story_from_html(html)
-            voice_lines = _parse_voice_lines_from_html(html)
+            voice_lines, audio = _parse_voice_lines_and_audio(html)
             if story or voice_lines:
-                return {"story": story, "voice_lines": voice_lines}
+                result = _build_result(
+                    story_val=story,
+                    voice_lines_val=voice_lines,
+                    quality_val=_parse_quality_from_html(html),
+                    html_for_fields=html,
+                )
+                if with_audio and audio:
+                    result["audio"] = audio
+                return result
     except Exception as e:
         logger.debug("皮肤页 HTML 获取失败 %s: %s", page_title, e)
 
@@ -416,15 +546,17 @@ def _parse_story_from_html(html: str) -> str:
 
 
 def _parse_voice_lines_from_html(html: str) -> Dict[str, List[str]]:
-    """从渲染后的 HTML 中提取皮肤台词。
+    """从渲染后的 HTML 中提取皮肤台词（仅台词，不含音频）。"""
+    return _parse_voice_lines_and_audio(html)[0]
 
-    经典皮肤页面用 div 结构组织台词：
-        <div class="basic-info-row-label"><a ...>隅泣</a></div>
-        <div>语音行1。/语音行2。</div>
-    常规皮肤页面用 p 标签：
-        <p><a ...>隅泣</a></p>
-        <p>line1.</p>
-        <p>/line2.</p>
+
+def _parse_voice_lines_and_audio(html: str) -> Tuple[Dict[str, List[str]], Dict[str, List[str]]]:
+    """从渲染后的 HTML 中提取皮肤台词和对应的官方音频 URL。
+
+    Returns:
+        (voice_lines, audio_urls)
+        voice_lines = {"隅泣": ["line1.", "line2."], ...}
+        audio_urls  = {"隅泣": ["url1.mp3", "url2.mp3"], ...}
     """
     section_pat = re.compile(
         r'<h2[^>]*>.*?<span[^>]*?id="皮肤台词"[^>]*?>.*?</span>.*?</h2>\s*'
@@ -433,30 +565,48 @@ def _parse_voice_lines_from_html(html: str) -> Dict[str, List[str]]:
     )
     m = section_pat.search(html)
     if not m:
-        return {}
+        return {}, {}
     section_html = m.group(1)
 
-    # 尝试用 <a> 标签定位技能名 + 后续 <p> 或 <div> 中的语音
-    result = {}
+    voice_lines: Dict[str, List[str]] = {}
+    audio_urls: Dict[str, List[str]] = {}
 
-    # 处理带 <a> 标签的技能（隅泣、善身、娴静等）
+    # 预处理：收集 bikit-audio 的 data-src
+    audio_spans: list = re.findall(
+        r'<span[^>]*class="bikit-audio[^"]*"[^>]*data-src="([^"]+)"',
+        section_html,
+    )
+
+    # 尝试用 <a> 标签定位技能名 + 后续 <div> 中的语音
     item_pat = re.compile(
         r'<a[^>]*>(.*?)</a>\s*</div>\s*'
         r'<div[^>]*style="align-self:\s*center;?"[^>]*>\s*(.*?)\s*</div>',
         re.DOTALL,
     )
-    for item_m in item_pat.finditer(section_html):
+    matched_items = list(item_pat.finditer(section_html))
+    audio_idx = 0
+
+    for item_m in matched_items:
         skill = item_m.group(1).strip()
-        # 移除 skill name 中的 HTML 标签（部分皮肤在 a 内部有 span）
         skill = re.sub(r'<[^>]+>', '', skill).strip()
         lines_text = item_m.group(2).strip()
-        # 移除 audio 按钮标签
-        lines_text = re.sub(r'<span[^>]*class="bikit-audio[^"]*"[^>]*>.*?</span>', '', lines_text)
-        lines_text = re.sub(r'<[^>]+>', '', lines_text)
-        lines_text = lines_text.strip()
-        lines = [l.strip() for l in re.split(r'\s*/\s*', lines_text) if l.strip()]
+        lines_text_clean = re.sub(
+            r'<span[^>]*class="bikit-audio[^"]*"[^>]*>.*?</span>', '', lines_text,
+        )
+        lines_text_clean = re.sub(r'<[^>]+>', '', lines_text_clean).strip()
+        lines = [l.strip() for l in re.split(r'\s*/\s*', lines_text_clean) if l.strip()]
         if skill and lines:
-            result[skill] = lines
+            voice_lines[skill] = lines
+            # 分配 audio URL
+            skill_audios = []
+            for _ in range(len(lines)):
+                if audio_idx < len(audio_spans):
+                    url = _data_src_to_audio_url(audio_spans[audio_idx])
+                    if url:
+                        skill_audios.append(url)
+                    audio_idx += 1
+            if skill_audios:
+                audio_urls[skill] = skill_audios
 
     # 处理阵亡（无 <a> 标签的纯文本）
     dead_pat = re.compile(
@@ -468,10 +618,19 @@ def _parse_voice_lines_from_html(html: str) -> Dict[str, List[str]]:
     if dm:
         dead_text = re.sub(r'<[^>]+>', '', dm.group(1)).strip()
         if dead_text:
-            result['阵亡'] = [dead_text]
+            voice_lines['阵亡'] = [dead_text]
+            dead_audios = []
+            for ds in audio_spans[audio_idx:]:
+                if '阵亡' in ds:
+                    url = _data_src_to_audio_url(ds)
+                    if url:
+                        dead_audios.append(url)
+                    audio_idx += 1
+            if dead_audios:
+                audio_urls['阵亡'] = dead_audios
 
     # 纯文本兜底解析（常规皮肤的 p 标签结构）
-    if not result:
+    if not voice_lines:
         p_pat = re.compile(r'<p[^>]*>(.*?)</p>', re.DOTALL)
         paragraphs = p_pat.findall(section_html)
         current_skill = None
@@ -484,19 +643,83 @@ def _parse_voice_lines_from_html(html: str) -> Dict[str, List[str]]:
                 skill = a_tag.group(1).strip()
                 if skill:
                     current_skill = skill
-                    result[current_skill] = []
+                    voice_lines[current_skill] = []
                     continue
             if strip_text == '阵亡':
                 current_skill = '阵亡'
-                result[current_skill] = []
+                voice_lines[current_skill] = []
                 continue
             if current_skill is not None and strip_text:
                 if strip_text.startswith('/'):
                     strip_text = strip_text[1:]
                 if strip_text:
-                    result[current_skill].append(strip_text)
+                    voice_lines[current_skill].append(strip_text)
+                    if audio_idx < len(audio_spans):
+                        url = _data_src_to_audio_url(audio_spans[audio_idx])
+                        if url:
+                            audio_urls.setdefault(current_skill, []).append(url)
+                        audio_idx += 1
 
-    return result
+    return voice_lines, audio_urls
+
+
+def _data_src_to_audio_url(data_src: str) -> Optional[str]:
+    """将 bikit-audio 的 data-src 属性转换为官方音频 URL。
+
+    转换逻辑复制自 BWIKI 前端 JS（MediaWiki:Gadget-sgsPinYin.js）：
+      1. data-src 格式: "01,1#谋关羽,冠武" 或 "01,#谋关羽,阵亡"
+         → 前段 = 编号[,序号]；后段 = 武将名,技能名
+      2. 阵亡技能特殊处理（后缀 _Dead）
+      3. 非阵亡: 武将拼音(全小写)+编号/武将拼音(首字母大写)_技能拼音(首字母大写)_序号
+      4. 最终 URL: https://web.sanguosha.com/10/pc/res/assets/runtime/voice/skin/{路径}.mp3
+
+    Returns:
+        官方音频 URL 字符串，或 None（缺少依赖或解析失败时）
+    """
+    if _ppy is None:
+        logger.warning("pypinyin 未安装，无法生成音频 URL，请 pip install pypinyin")
+        return None
+
+    def _ppy_impl(text: str, mode: int) -> str:
+        """复制前端 ppy() 函数逻辑。"""
+        style = _PStyle.NORMAL
+        if mode in (0, 1):
+            py_list = _ppy(text, style=style)
+        else:
+            py_list = _ppy(text, style=style)
+        py = [p[0] for p in py_list]
+        if mode in (1, 2):
+            py = [s[0].upper() + s[1:] if s else s for s in py]
+        for i in range(len(py)):
+            idx = py[i].find("v")
+            max_idx = len(py[i]) - 1
+            if 0 < idx < max_idx:
+                py[i] = py[i].replace("v", "u")
+        return "".join(py)
+
+    try:
+        parts = data_src.split("#")
+        v1 = [s for s in parts[0].split(",") if s]
+        v2 = [s for s in parts[1].split(",") if s]
+    except (IndexError, ValueError):
+        return None
+
+    if not v1 or not v2:
+        return None
+
+    # 判断阵亡
+    is_dead = "阵亡" in parts[1].split(",")
+
+    if is_dead:
+        src = (_ppy_impl(v2[0], 0) + v1[0] + "/"
+               + _ppy_impl(v2[0], 1) + "_Dead")
+    else:
+        idx_suffix = v1[1] if len(v1) > 1 and v1[1] else "1"
+        src = (_ppy_impl(v2[0], 0) + v1[0] + "/"
+               + _ppy_impl(v2[0], 1) + "_"
+               + _ppy_impl(v2[1], 2) + "_0" + idx_suffix)
+
+    return "https://web.sanguosha.com/10/pc/res/assets/runtime/voice/skin/" + src + ".mp3"
 
 
 def _load_classic_cdn_map(output_root) -> dict:
@@ -748,7 +971,11 @@ def fetch_all_skins(session: requests.Session, delay: float = 0.1) -> List[dict]
         for item in results:
             for title, info in item.items():
                 po = info.get("printouts", {})
+                # SMW 页面标题作为唯一标识，用于 key 构建和 URL 请求
+                # 某些皮肤（战场绝版/战场荣耀等）的所属武将含赛季后缀 (S19)，
+                # SMW 返回的 所属武将 属性去掉了后缀，需用原始标题区分
                 skins = {
+                    "smw_title": title,  # 原始 SMW 页面标题
                     "skin_name": (po.get("皮肤名") or [""])[0],
                     "general": (po.get("所属武将") or [""])[0],
                     "faction": (po.get("势力") or [""])[0],
@@ -778,6 +1005,9 @@ def build_file_names(skin: dict) -> List[Tuple[str, str]]:
     常规皮肤: {皮肤名}-{武将名}-{类型}.png
     经典原画: {武将名}-{皮肤名}.png（无 静态/大图 之分，仅一张图）
 
+    战场荣耀/战场绝版等赛季皮的 SMW 标题含赛季后缀 (S**)，
+    其对应的文件也包含该后缀，此处自动从 smw_title 提取并追加。
+
     Returns:
         [(文件:名称, 本地保存文件名), ...]
     """
@@ -786,34 +1016,52 @@ def build_file_names(skin: dict) -> List[Tuple[str, str]]:
     morph = skin.get("morphology", "")
     quality = skin.get("quality", "")
 
+    # 从 smw_title 提取赛季后缀，如 (S19)
+    suffix = ""
+    smw_title = skin.get("smw_title", "")
+    if smw_title and sn and gn:
+        # smw_title 格式: {皮肤名}*{武将名}(赛季后缀)
+        # 先去掉 "皮肤名*" 前缀，取剩余部分
+        after_star = smw_title.split("*", 1)[-1] if "*" in smw_title else ""
+        if after_star and after_star != gn and after_star.startswith(gn):
+            suffix = after_star[len(gn):]
+
+    def _fn(base: str) -> str:
+        """生成带后缀的文件名 base（不含扩展名部分）"""
+        if not suffix:
+            return base
+        dot_idx = base.rfind(".")
+        if dot_idx == -1:
+            return base
+        return base[:dot_idx] + suffix + base[dot_idx:]
+
     files = []
 
     # 经典原画皮肤：文件名为 {武将名}-{皮肤名}.png，仅一张图（无静态/大图区分）
     if quality in ("原画", "经典形象") or sn == "经典形象":
-        file_title = f"文件:{gn}-{sn}.png"
-        local_name = f"{sn}-{gn}.png"
+        fn = _fn(f"{gn}-{sn}.png")
+        file_title = f"文件:{fn}"
+        local_name = fn
         files.append((file_title, local_name))
         return files
 
     # 常规皮肤：{皮肤名}-{武将名}-{类型}.png
-    # 根据品质分级决定生成哪些文件——
     #   普通/稀有/史诗: 仅静态图（低品质一般没有大图和动态图）
     #   传说/限定:      静态 + 大图（大图率高），动态依形态字段
-    static_file = f"文件:{sn}-{gn}-静态.png"
-    local_static = f"{sn}-{gn}-静态.png"
-    files.append((static_file, local_static))
+    s = _fn(f"{sn}-{gn}-静态.png")
+    files.append((f"文件:{s}", s))
 
-    # 仅传说/限定品质生成大图
     if quality in ("传说", "限定"):
-        big_file = f"文件:{sn}-{gn}-大图.png"
-        local_big = f"{sn}-{gn}-大图.png"
-        files.append((big_file, local_big))
+        b = _fn(f"{sn}-{gn}-大图.png")
+        files.append((f"文件:{b}", b))
 
-    # 动态 GIF — 仅当形态包含"动态"时生成
+    # 动态系列 — 形态含"动态"时生成
     if "动态" in morph:
-        gif_file = f"文件:{sn}-{gn}-动态.gif"
-        local_gif = f"{sn}-{gn}-动态.gif"
-        files.append((gif_file, local_gif))
+        g = _fn(f"{sn}-{gn}-动态.gif")
+        files.append((f"文件:{g}", g))
+        # 动态登场（入场动画）
+        de = _fn(f"{sn}-{gn}-动态登场.gif")
+        files.append((f"文件:{de}", de))
 
     return files
 
@@ -1319,10 +1567,33 @@ def main(argv: Optional[List[str]] = None) -> None:
                 unknown_dir.rmdir()
                 logger.info("「未知」文件夹已清空删除")
 
-    # Step 7: 爬取皮肤故事和台词（可选）
+    # Step 7: 爬取皮肤故事和台词（可选，增量模式）
     if args.with_metadata:
         logger.info("正在爬取 %d 个皮肤的故事和台词...", len(filtered))
-        metadata = {}
+        meta_path = output_root / "metadata.json"
+
+        # 加载已有元数据，实现增量更新（除非 --refresh-metadata 强制全量）
+        existing_metadata: dict = {}
+        if not args.refresh_metadata and meta_path.exists():
+            try:
+                with open(meta_path, "r", encoding="utf-8") as f:
+                    existing_metadata = json.load(f)
+                logger.info("已加载 %d 条已有元数据，仅抓取新皮肤或缺失字段的条目",
+                            len(existing_metadata))
+            except (json.JSONDecodeError, IOError):
+                logger.warning("已有 metadata.json 读取失败，将从零开始")
+        elif args.refresh_metadata:
+            existing_count = 0
+            if meta_path.exists():
+                try:
+                    existing_count = len(json.load(open(meta_path, "r", encoding="utf-8")))
+                except Exception:
+                    pass
+            logger.info("--refresh-metadata: 忽略已有 %d 条元数据，全量重新爬取", existing_count)
+
+        metadata = dict(existing_metadata)
+        auto_save_interval = 100
+        new_count = 0
 
         pbar = tqdm(
             total=len(filtered),
@@ -1333,11 +1604,16 @@ def main(argv: Optional[List[str]] = None) -> None:
         ) if tqdm else None
 
         for skin in filtered:
-            skin_key = f"{skin['skin_name']}*{skin['general']}"
+            skin_key = _skin_key(skin)
             if skin_key not in metadata:
-                data = fetch_skin_metadata(session, skin)
+                data = fetch_skin_metadata(session, skin, with_audio=args.with_audio)
                 if data["story"] or data["voice_lines"]:
                     metadata[skin_key] = data
+                    new_count += 1
+                if new_count % auto_save_interval == 0:
+                    with open(meta_path, "w", encoding="utf-8") as f:
+                        json.dump(metadata, f, ensure_ascii=False, indent=2)
+                    logger.debug("元数据自动保存 (已爬取 %d 条新数据)", new_count)
             if pbar:
                 pbar.update(1)
 
@@ -1345,10 +1621,90 @@ def main(argv: Optional[List[str]] = None) -> None:
             pbar.close()
 
         if metadata:
-            meta_path = output_root / "metadata.json"
             with open(meta_path, "w", encoding="utf-8") as f:
                 json.dump(metadata, f, ensure_ascii=False, indent=2)
-            logger.info("元数据已保存: %s (%d 条)", meta_path, len(metadata))
+            logger.info("元数据已保存: %s (%d 条, 新增 %d)",
+                        meta_path, len(metadata), new_count)
+
+    # Step 7.5: 下载音频文件（可选，独立于 --with-metadata）
+    if args.download_audio:
+        logger.info("正在抓取 %d 个皮肤的音频元数据...", len(filtered))
+
+        # 先收集需要抓取音频的皮肤（有台词数据才需要）
+        audio_skins: List[Tuple[dict, dict]] = []  # (skin, metadata_with_audio)
+
+        audio_pbar = tqdm(
+            total=len(filtered),
+            desc="音频元数据",
+            unit="个",
+            ncols=70,
+            leave=False,
+        ) if tqdm else None
+
+        for skin in filtered:
+            skin_key = _skin_key(skin)
+            data = fetch_skin_metadata(session, skin, with_audio=True)
+            if data.get("audio"):
+                audio_skins.append((skin, data))
+            if audio_pbar:
+                audio_pbar.update(1)
+
+        if audio_pbar:
+            audio_pbar.close()
+
+        logger.info("有音频的皮肤: %d/%d", len(audio_skins), len(filtered))
+
+        if audio_skins:
+            # 构建下载列表
+            audio_downloads: List[Tuple[str, Path]] = []  # (url, dest_path)
+            for skin, data in audio_skins:
+                skin_key = _skin_key(skin)
+                # 命名为 "皮肤名-武将名-audio" 形式
+                # 使用 SMW 标题保留赛季后缀
+                safe_dir_name = skin_key.replace("*", "-") + "-audio"
+                # 确定分组路径
+                group = skin["faction"] or "未知"
+                if args.group_by == "general":
+                    group = skin["general"] or "未知"
+                elif args.group_by == "quality":
+                    group = skin["quality"] or "未知"
+                elif args.group_by == "none":
+                    group = ""
+                skin_audio_dir = (output_root / group / safe_dir_name
+                                  if group else output_root / safe_dir_name)
+
+                for skill, urls in data["audio"].items():
+                    for i, url in enumerate(urls):
+                        local_name = f"{skill}_{i+1:02d}.mp3"
+                        dest = skin_audio_dir / local_name
+                        audio_downloads.append((url, dest))
+
+            logger.info("开始下载 %d 个音频文件 (并发 %d)...", len(audio_downloads), args.concurrency)
+            audio_ok, audio_skip, audio_fail = 0, 0, 0
+
+            adl_pbar = (
+                tqdm(total=len(audio_downloads), desc="音频下载", unit="个", ncols=70, leave=False)
+                if tqdm else None
+            )
+            with ThreadPoolExecutor(max_workers=args.concurrency) as executor:
+                futures = {
+                    executor.submit(download_one, url, dest): url
+                    for url, dest in audio_downloads
+                }
+                for future in as_completed(futures):
+                    result = future.result()
+                    if result == "ok":
+                        audio_ok += 1
+                    elif result == "skip":
+                        audio_skip += 1
+                    else:
+                        audio_fail += 1
+                    if adl_pbar:
+                        adl_pbar.update(1)
+
+            if adl_pbar:
+                adl_pbar.close()
+            logger.info("音频下载完成: 成功 %d, 跳过 %d, 失败 %d", audio_ok, audio_skip, audio_fail)
 
     # 从缓存中移除下载失败的文件 URL，下次运行可重新解析
     if failed_titles and use_cache:
