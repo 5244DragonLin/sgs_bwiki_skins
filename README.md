@@ -191,6 +191,8 @@ python sgs_bwiki_skins.py
 | `metadata.with_metadata` | 爬取皮肤故事/台词 | `false` |
 | `metadata.download_audio` | 下载语音 MP3 | `false` |
 
+> ⚠️ YAML 中路径建议使用正斜杠 `/`（如 `E:/BaiduSyncdisk/...`），脚本会自动兼容。
+
 ## ⌨️CLI 模式
 
 ```
