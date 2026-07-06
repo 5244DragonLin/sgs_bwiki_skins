@@ -19,6 +19,7 @@ sgs_bwiki_skins — 从 Bwiki 三国杀 WIKI 批量下载皮肤图片
 
 import argparse
 import json
+import yaml
 import logging
 import os
 import random
@@ -46,7 +47,7 @@ except ImportError:
 logger = logging.getLogger("bwiki_sgs")
 
 
-def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
+def parse_args(argv: Optional[List[str]] = None, defaults: Optional[Dict] = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         prog="bwiki_sgs_scraper",
         description="从 Bwiki 三国杀 WIKI 批量下载皮肤图片",
@@ -59,6 +60,11 @@ def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
   python sgs_bwiki_skins.py --faction 蜀,吴 --quality 传说  # 蜀+吴传说皮
   python sgs_bwiki_skins.py --general 曹操,赵云             # 仅下载指定武将皮肤
 """,
+    )
+    parser.add_argument(
+        "--yaml", "-y",
+        default="config.yaml",
+        help="YAML 配置文件路径（CLI 参数优先级高于配置文件）",
     )
     parser.add_argument(
         "--output", "-o",
@@ -160,6 +166,8 @@ def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
         action="store_true",
         help="强制重新爬取全部皮肤元数据，忽略已有 metadata.json（配合 --with-metadata 使用）",
     )
+    if defaults:
+        parser.set_defaults(**defaults)
     return parser.parse_args(argv)
 
 
@@ -1319,6 +1327,102 @@ def download_one(
                 return "fail"
 
     return "fail"
+
+
+def load_config(config_path: str = "config.yaml") -> dict:
+    """从 YAML 配置文件加载配置并扁平化为 argparse 参数字典。
+
+    优先级: config.yaml > config.example.yaml > 空字典
+    """
+    import os as _os
+
+    for path in (config_path, _os.path.splitext(config_path)[0] + ".example.yaml",
+                  "config.example.yaml"):
+        if _os.path.exists(path):
+            try:
+                with open(path, 'r', encoding='utf-8') as f:
+                    data = yaml.safe_load(f) or {}
+                return _flatten_config(data)
+            except Exception:
+                continue
+    return {}
+
+
+def _flatten_config(data: dict) -> dict:
+    """将嵌套的 YAML 配置扁平化为 argparse 参数名。"""
+    flat = {}
+
+    # api
+    api = data.get("api", {})
+    if isinstance(api, dict) and api.get("delay") is not None:
+        flat["delay"] = api["delay"]
+
+    # download
+    dl = data.get("download", {})
+    if isinstance(dl, dict):
+        if dl.get("output_dir"):
+            flat["output"] = dl["output_dir"]
+        if dl.get("concurrency") is not None:
+            flat["concurrency"] = dl["concurrency"]
+        if dl.get("max_skins") is not None:
+            flat["max_skins"] = dl["max_skins"]
+
+    # url_parsing
+    up = data.get("url_parsing", {})
+    if isinstance(up, dict) and up.get("concurrency") is not None:
+        flat["url_concurrency"] = up["concurrency"]
+
+    # resource_types → static_only / big_only / dynamic_only
+    rt = data.get("resource_types", {})
+    if isinstance(rt, dict):
+        static = rt.get("static", True)
+        big = rt.get("big", True)
+        dynamic = rt.get("dynamic", True)
+        true_count = sum([static, big, dynamic])
+        if true_count == 1:
+            if static:
+                flat["static_only"] = True
+            elif big:
+                flat["big_only"] = True
+            elif dynamic:
+                flat["dynamic_only"] = True
+
+    # filters
+    filters = data.get("filters", {})
+    if isinstance(filters, dict):
+        if filters.get("faction"):
+            flat["faction"] = filters["faction"]
+        if filters.get("quality"):
+            flat["quality"] = filters["quality"]
+        if filters.get("general"):
+            flat["general"] = filters["general"]
+
+    # output_grouping
+    og = data.get("output_grouping", {})
+    if isinstance(og, dict) and og.get("group_by"):
+        flat["group_by"] = og["group_by"]
+
+    # cache
+    cache = data.get("cache", {})
+    if isinstance(cache, dict):
+        if cache.get("cache_file"):
+            flat["cache_file"] = cache["cache_file"]
+        if cache.get("no_cache"):
+            flat["no_cache"] = cache["no_cache"]
+
+    # metadata
+    meta = data.get("metadata", {})
+    if isinstance(meta, dict):
+        if meta.get("with_metadata"):
+            flat["with_metadata"] = True
+        if meta.get("with_audio"):
+            flat["with_audio"] = True
+        if meta.get("download_audio"):
+            flat["download_audio"] = True
+        if meta.get("refresh_metadata"):
+            flat["refresh_metadata"] = True
+
+    return flat
 
 
 def main(argv: Optional[List[str]] = None) -> None:
