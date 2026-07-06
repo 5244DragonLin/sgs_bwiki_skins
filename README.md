@@ -1,4 +1,4 @@
-# sgs_bwiki_skins v1.2
+# sgs_bwiki_skins
 
 从 Bwiki 三国杀 WIKI 批量下载皮肤图片、故事与台词。基于 SMW + MediaWiki 双 API，支持静态/大图/动态 GIF 三种资源、势力/品质筛选、全流程进度条、并发下载与 URL 增量缓存。
 
