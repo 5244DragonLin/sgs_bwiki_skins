@@ -1,0 +1,76 @@
+# ============================================================
+# sgs_bwiki_skins - 三国杀 Bwiki 皮肤图片批量下载 配置文件
+# ============================================================
+# 使用方法：复制为 config.yaml，脚本启动时自动加载
+#   cp config.example.yaml config.yaml
+#   python sgs_bwiki_skins.py
+# 命令行参数优先级高于本配置文件。
+# ============================================================
+
+# ---------- API 配置 ----------
+api:
+  # Bwiki 三国杀 WIKI SMW API 端点
+  smw_api: "https://wiki.biligame.com/sgs/api.php"
+  # MediaWiki 批量图片 URL 解析 API（每次最多 50 个）
+  imageinfo_api: "https://wiki.biligame.com/sgs/api.php"
+  # API 请求间隔（秒），Cloudflare 限流严格，建议不低于 1.0
+  delay: 1.0
+
+# ---------- 请求头配置 ----------
+headers:
+  user_agent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36"
+
+# ---------- 下载配置 ----------
+download:
+  # 输出根目录（默认脚本所在目录下的 output/sgs_skins）
+  output_dir: ""
+  # 并发下载线程数
+  concurrency: 10
+  # 最大下载皮肤数（0 表示不限制）
+  max_skins: 0
+
+# ---------- URL 解析配置 ----------
+url_parsing:
+  # URL 解析阶段内部并发数（0=串行）
+  concurrency: 5
+
+# ---------- 资源类型筛选（至少选一种）----------
+resource_types:
+  # 下载静态图（PNG）
+  static: true
+  # 下载大图
+  big: true
+  # 下载动态图（GIF）
+  dynamic: true
+
+# ---------- 内容筛选（默认全部）----------
+filters:
+  # 势力筛选，逗号分隔。如: "蜀,魏,吴,群,神"
+  faction: ""
+  # 品质筛选，逗号分隔。如: "传说,限定,史诗,原画"
+  quality: ""
+  # 武将筛选，逗号分隔。如: "曹操,赵云"
+  general: ""
+
+# ---------- 输出分组 ----------
+output_grouping:
+  # 分组方式: faction=按势力, general=按武将, quality=按品质, none=不分组
+  group_by: "faction"
+
+# ---------- 缓存与元数据 ----------
+cache:
+  # URL 缓存文件路径（默认 {output}/.url_cache.json）
+  cache_file: ""
+  # 是否禁用 URL 缓存（强制重新解析全部 URL）
+  no_cache: false
+
+# ---------- 皮肤故事/台词/语音 ----------
+metadata:
+  # 是否爬取皮肤故事和台词（保存为 metadata.json）
+  with_metadata: false
+  # 是否写入官方语音音频直链（需 with_metadata=true）
+  with_audio: false
+  # 是否下载语音 MP3 文件
+  download_audio: false
+  # 是否强制全量重新爬取元数据（忽略已有缓存）
+  refresh_metadata: false

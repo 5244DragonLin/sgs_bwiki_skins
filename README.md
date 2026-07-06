@@ -166,6 +166,31 @@ python sgs_bwiki_skins.py --max-skins 3
 python sgs_bwiki_skins.py --max-skins 3 --dry-run
 ```
 
+### 4. 配置文件（可选）
+
+复制示例配置并按需修改，命令行参数优先级更高：
+
+```bash
+cp config.example.yaml config.yaml
+# 编辑 config.yaml 修改输出目录、筛选条件等
+python sgs_bwiki_skins.py
+```
+
+`config.example.yaml` 中可配置项：
+
+| 配置项 | 说明 | 默认值 |
+|--------|------|--------|
+| `api.delay` | API 请求间隔（秒） | `1.0` |
+| `download.output_dir` | 输出根目录 | 脚本目录下的 `output/` |
+| `download.concurrency` | 并发下载数 | `10` |
+| `resource_types` | 资源类型（静态/大图/动态） | 全部开启 |
+| `filters.faction` | 势力筛选（逗号分隔） | 空（全部） |
+| `filters.quality` | 品质筛选（逗号分隔） | 空（全部） |
+| `filters.general` | 武将筛选（逗号分隔） | 空（全部） |
+| `output_grouping.group_by` | 输出分组方式 | `faction` |
+| `metadata.with_metadata` | 爬取皮肤故事/台词 | `false` |
+| `metadata.download_audio` | 下载语音 MP3 | `false` |
+
 ## ⌨️CLI 模式
 
 ```
@@ -214,8 +239,9 @@ python sgs_bwiki_skins.py [选项]
 
 ```text
 sgs_bwiki_skins/
-├── sgs_bwiki_skins.py    # 主脚本（基于 requests + pypinyin）
-├── requirements.txt        # pip install -r requirements.txt
+├── sgs_bwiki_skins.py
+├── requirements.txt
+├── config.example.yaml     # 示例配置文件
 ├── README.md
 ├── LICENSE
 └── .gitignore
@@ -278,7 +304,7 @@ Fork → 创建分支 → 提交修改 → 发起 Pull Request。
 - 新增 `--with-audio` 参数：在 metadata.json 中写入官方音频直链（需与 `--with-metadata` 共用）
 - 新增 `--download-audio` 参数：下载语音台词对应的官方 .mp3 音频文件，与 `--with-audio` 分离，可独立使用
 - `--with-audio` 和 `--download-audio` 可组合使用，实现"先记直链再下载"的完整流程
-- metadata.json 自动保存：每爬取 100 条即写盘一次，避免中途崩溃丢数据
+- metadata.json ：每爬取 100 条即写盘一次，避免中途崩溃丢数据
 - metadata.json 增量更新：自动复用已有元数据，只抓取新增或缺失的皮肤，不再全量覆盖
 - metadata.json 新增字段：`品质`、 `所属收藏册`、`画师`、`上线时间`、`静态获取方式`、`动态获取方式`，空字段自动省略
 - 修复战场荣耀/战场绝版系列赛季后缀 key 冲突：改用 SMW 原始页面标题作为 metadata key，`战场绝版*徐氏(S19)` 与 `战场绝版*徐氏(S9)` 不再被互相覆盖
