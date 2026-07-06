@@ -1123,6 +1123,36 @@ def _resolve_url_batch(
                 logger.warning("批量解析最终异常: %s", e)
                 for t in batch:
                     batch_result.setdefault(t, None)
+
+    # --- .jpg 扩展名重试 ---
+    # 对返回 missing 且以 .png 结尾的条目，用 .jpg 扩展名重试
+    missing_png = [t for t in batch if batch_result.get(t) is None and t.endswith('.png')]
+    if missing_png:
+        jpg_batch = [t.replace('.png', '.jpg') for t in missing_png]
+        jpg_params = {
+            "action": "query",
+            "titles": "|".join(jpg_batch),
+            "prop": "imageinfo",
+            "iiprop": "url",
+            "format": "json",
+        }
+        try:
+            resp = session.get(api_url, params=jpg_params, timeout=60)
+            resp.raise_for_status()
+            data = resp.json()
+            retry_ok = 0
+            for _pid, pinfo in data.get("query", {}).get("pages", {}).items():
+                title = pinfo.get("title", "")
+                ii = pinfo.get("imageinfo", [])
+                if ii and title.endswith('.jpg'):
+                    orig_title = title.replace('.jpg', '.png')
+                    batch_result[orig_title] = ii[0]["url"]
+                    retry_ok += 1
+            if retry_ok:
+                logger.info("%d 个文件通过 .jpg 扩展名重试解析成功", retry_ok)
+        except Exception:
+            pass  # 重试失败不影响主流程
+
     return batch_result
 
 
