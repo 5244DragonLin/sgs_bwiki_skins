@@ -1426,7 +1426,11 @@ def _flatten_config(data: dict) -> dict:
 
 
 def main(argv: Optional[List[str]] = None) -> None:
-    args = parse_args(argv)
+    pre_parser = argparse.ArgumentParser(add_help=False)
+    pre_parser.add_argument("--yaml", "-y", default="config.yaml")
+    pre_args, _ = pre_parser.parse_known_args(argv)
+    yaml_defaults = load_config(pre_args.yaml)
+    args = parse_args(argv, defaults=yaml_defaults)
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s [%(levelname)s] %(message)s",
