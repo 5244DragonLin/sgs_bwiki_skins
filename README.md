@@ -319,6 +319,16 @@ Fork → 创建分支 → 提交修改 → 发起 Pull Request。
 
 - 首个可用版本
 
+## 🔗 关联项目
+
+- **[sgs-skin-gallery](https://github.com/5244DragonLin/sgs-skin-gallery)** — 基于本项目皮肤数据的可视化画廊，前端浏览与收藏
+  - GitHub：https://github.com/5244DragonLin/sgs-skin-gallery
+  - Gitee：https://gitee.com/yhl5244/sgs-skin-gallery
+
+- **[sgs_bwiki_heros](https://github.com/5244DragonLin/sgs_bwiki_heros)** — 从 BWIKI 爬取武将结构化数据（技能/卡包/称号/定位等），本项目的武将信息数据源
+  - GitHub：https://github.com/5244DragonLin/sgs_bwiki_heros
+  - Gitee：https://gitee.com/yhl5244/sys_bwiki_heros
+
 ## ☕捐赠
 
 你的支持是我坚持开源的动力。
