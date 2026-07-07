@@ -1,4 +1,4 @@
-# sgs_bwiki_skins
+﻿# sgs_bwiki_skins
 
 从 Bwiki 三国杀 WIKI 批量下载皮肤图片、故事与台词。基于 SMW + MediaWiki 双 API，支持静态/大图/动态 GIF 三种资源、势力/品质筛选、全流程进度条、并发下载与 URL 增量缓存。
 
@@ -325,7 +325,7 @@ Fork → 创建分支 → 提交修改 → 发起 Pull Request。
 
 | 支付宝 | 微信 |
 |--------|------|
-| ![支付宝](https://gitee.com/yhl5244/images/raw/master/donate_alipay.jpg) | ![微信](https://gitee.com/yhl5244/images/raw/master/donate_wechat.jpg) |
+| ![支付宝](./assets/donate_alipay.jpg) | ![微信](./assets/donate_wechat.jpg) |
 
 ## ⚠️免责声明
 
