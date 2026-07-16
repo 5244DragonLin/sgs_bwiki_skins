@@ -75,36 +75,47 @@ output/sgs_skins/
 └── 神/
 ```
 
-使用 `--with-metadata --with-audio` 后，`metadata.json` 内容示例：
+使用 `--with-metadata --with-audio` 后，`metadata.json` 内容示例（统一格式 `{meta, data}`，全中文字段，以「武将名」对齐）：
 
 ```json
 {
-  "惊鸿倩影*曹金玉": {
-    "story": "金乡公主曹金玉近日有些闷闷不乐...",
-    "quality": "传说",
-    "所属收藏册": "喜乐锦年",
-    "画师": "DH",
-    "静态获取方式": "累计参与新春夺宝120次（消耗新春夺宝券*600）",
-    "动态获取方式": "累计消费达到88888元宝",
-    "voice_lines": {
-      "隅泣": ["泪眼婆娑泣，伊人憔悴消。", "柔情愁肠断，寂寞梧桐落。"],
-      "善身": ["天子之家，需守心静身。", "心清则明，积善则安。"],
-      "娴静": ["娴雅淑静，冰清玉洁。", "媖娴美好，典雅温蕴。"],
-      "阵亡": ["余香空留此，玉指轻揉散。"]
-    },
-    "audio": {
-      "隅泣": [
-        "https://web.sanguosha.com/10/pc/res/assets/runtime/voice/skin/caojinyu02/CaoJinYu_YuQi_01.mp3",
-        "https://web.sanguosha.com/10/pc/res/assets/runtime/voice/skin/caojinyu02/CaoJinYu_YuQi_02.mp3"
-      ],
-      "善身": ["https://web.sanguosha.com/10/pc/res/assets/runtime/voice/skin/caojinyu02/CaoJinYu_ShanShen_01.mp3"],
-      "阵亡": ["https://web.sanguosha.com/10/pc/res/assets/runtime/voice/skin/caojinyu02/CaoJinYu_Dead.mp3"]
+  "meta": {
+    "total": 2231,
+    "source": "bilibili 三国杀 WIKI",
+    "crawl_time": "2026-07-16T10:50:00"
+  },
+  "data": [
+    {
+      "key": "惊鸿倩影*曹金玉",
+      "皮肤名": "惊鸿倩影",
+      "武将名": "曹金玉",
+      "皮肤故事": "金乡公主曹金玉近日有些闷闷不乐...（多段以 \\n 分隔）",
+      "皮肤台词": {
+        "隅泣": ["泪眼婆娑泣，伊人憔悴消。", "柔情愁肠断，寂寞梧桐落。"],
+        "善身": ["天子之家，需守心静身。", "心清则明，积善则安。"],
+        "娴静": ["娴雅淑静，冰清玉洁。", "媖娴美好，典雅温蕴。"],
+        "阵亡": ["余香空留此，玉指轻揉散。"]
+      },
+      "品质": "传说",
+      "收藏册": "连理金乡",
+      "画师": "DH",
+      "皮肤上线时间": "2022-2-04",
+      "静态获取方式": "累计参与福虎夺宝160次（消耗福虎夺宝券*800）",
+      "动态获取方式": "累计消费达到88888元宝",
+      "语音地址": {
+        "隅泣": [
+          "https://web.sanguosha.com/10/pc/res/assets/runtime/voice/skin/caojinyu02/CaoJinYu_YuQi_01.mp3",
+          "https://web.sanguosha.com/10/pc/res/assets/runtime/voice/skin/caojinyu02/CaoJinYu_YuQi_02.mp3"
+        ],
+        "善身": ["https://web.sanguosha.com/10/pc/res/assets/runtime/voice/skin/caojinyu02/CaoJinYu_ShanShen_01.mp3"],
+        "阵亡": ["https://web.sanguosha.com/10/pc/res/assets/runtime/voice/skin/caojinyu02/CaoJinYu_Dead.mp3"]
+      }
     }
-  }
+  ]
 }
 ```
 
-注意：`quality`、`所属收藏册`、`画师`、`上线时间`、`静态获取方式`、`动态获取方式` 自动从皮肤页面抓取，字段值为空时自动省略。`audio` 中的 URL 为官方直链，可直接用于播放或下载。
+注意：`品质`、`收藏册`、`画师`、`皮肤上线时间`、`静态获取方式`、`动态获取方式` 自动从皮肤页面抓取，字段值为空时自动省略。`语音地址` 中的 URL 为官方直链，可直接用于播放或下载。
 
 ## 🚀快速开始
 

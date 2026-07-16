@@ -433,6 +433,30 @@ def _skin_key(skin: dict) -> str:
     return skin.get("smw_title") or f"{skin['skin_name']}*{skin['general']}"
 
 
+def _split_skin_key(key: str):
+    """从皮肤 key（皮肤名*武将名(赛季后缀)）拆出 (皮肤名, 武将名)。"""
+    parts = key.split("*", 1)
+    sn = parts[0].strip()
+    gn = parts[1].strip() if len(parts) > 1 else ""
+    gn = re.sub(r"\(.*\)$", "", gn).strip()  # 去掉赛季后缀如 (S19)
+    return sn, gn
+
+
+def _save_metadata(metadata: dict, meta_path) -> None:
+    """将内部 {skin_key: entry} 字典导出为统一格式 {meta, data:[...]}。"""
+    data_list = [metadata[k] for k in metadata]
+    out = {
+        "meta": {
+            "total": len(data_list),
+            "source": "bilibili 三国杀 WIKI",
+            "crawl_time": datetime.now().isoformat(),
+        },
+        "data": data_list,
+    }
+    with open(meta_path, "w", encoding="utf-8") as f:
+        json.dump(out, f, ensure_ascii=False, indent=2)
+
+
 def _parse_skin_story(raw_text: str) -> str:
     """从皮肤页 Wikitext 中提取皮肤故事。
 
@@ -469,21 +493,27 @@ def fetch_skin_metadata(session: requests.Session, skin: dict,
     # 优先用 SMW 原始标题作为页面标识（保留战场绝版等赛季后缀）
     page_title = skin.get("smw_title") or (skin.get("skin_name", "") + "*" + skin.get("general", ""))
 
-    # 需从页面提取的额外字段
-    EXTRA_FIELDS = ["所属收藏册", "画师", "上线时间", "静态获取方式", "动态获取方式"]
+    # 页面字段标签 → 统一输出字段名（全中文，与 heros 管线对齐）
+    _FIELD_MAP = {
+        "所属收藏册": "收藏册",
+        "画师": "画师",
+        "上线时间": "皮肤上线时间",
+        "静态获取方式": "静态获取方式",
+        "动态获取方式": "动态获取方式",
+    }
 
     def _build_result(story_val, voice_lines_val, quality_val, html_for_fields=None, raw_for_fields=None):
-        r: dict = {"story": story_val, "voice_lines": voice_lines_val}
+        r: dict = {"皮肤故事": story_val, "皮肤台词": voice_lines_val}
         if quality_val:
-            r["quality"] = quality_val
-        for f in EXTRA_FIELDS:
+            r["品质"] = quality_val
+        for page_label, out_key in _FIELD_MAP.items():
             val = ""
             if raw_for_fields is not None:
-                val = _parse_field_from_raw(raw_for_fields, f)
+                val = _parse_field_from_raw(raw_for_fields, page_label)
             if not val and html_for_fields is not None:
-                val = _parse_field_from_html(html_for_fields, f)
+                val = _parse_field_from_html(html_for_fields, page_label)
             if val:
-                r[f] = val
+                r[out_key] = val
         return r
 
     if not with_audio:
@@ -523,12 +553,12 @@ def fetch_skin_metadata(session: requests.Session, skin: dict,
                     html_for_fields=html,
                 )
                 if with_audio and audio:
-                    result["audio"] = audio
+                    result["语音地址"] = audio
                 return result
     except Exception as e:
         logger.debug("皮肤页 HTML 获取失败 %s: %s", page_title, e)
 
-    return {"story": "", "voice_lines": {}}
+    return {"皮肤故事": "", "皮肤台词": {}}
 
 
 def _parse_story_from_html(html: str) -> str:
@@ -1724,7 +1754,12 @@ def main(argv: Optional[List[str]] = None) -> None:
         if not args.refresh_metadata and meta_path.exists():
             try:
                 with open(meta_path, "r", encoding="utf-8") as f:
-                    existing_metadata = json.load(f)
+                    loaded = json.load(f)
+                # 兼容新旧格式：新格式 {meta, data:[...]}，旧格式裸 dict
+                if isinstance(loaded, dict) and isinstance(loaded.get("data"), list):
+                    existing_metadata = {e.get("key"): e for e in loaded["data"] if e.get("key")}
+                else:
+                    existing_metadata = loaded
                 logger.info("已加载 %d 条已有元数据，仅抓取新皮肤或缺失字段的条目",
                             len(existing_metadata))
             except (json.JSONDecodeError, IOError):
@@ -1754,12 +1789,12 @@ def main(argv: Optional[List[str]] = None) -> None:
             skin_key = _skin_key(skin)
             if skin_key not in metadata:
                 data = fetch_skin_metadata(session, skin, with_audio=args.with_audio)
-                if data["story"] or data["voice_lines"]:
-                    metadata[skin_key] = data
+                if data.get("皮肤故事") or data.get("皮肤台词"):
+                    sn, gn = _split_skin_key(skin_key)
+                    metadata[skin_key] = {"key": skin_key, "皮肤名": sn, "武将名": gn, **data}
                     new_count += 1
                 if new_count % auto_save_interval == 0:
-                    with open(meta_path, "w", encoding="utf-8") as f:
-                        json.dump(metadata, f, ensure_ascii=False, indent=2)
+                    _save_metadata(metadata, meta_path)
                     logger.debug("元数据自动保存 (已爬取 %d 条新数据)", new_count)
             if pbar:
                 pbar.update(1)
@@ -1768,8 +1803,7 @@ def main(argv: Optional[List[str]] = None) -> None:
             pbar.close()
 
         if metadata:
-            with open(meta_path, "w", encoding="utf-8") as f:
-                json.dump(metadata, f, ensure_ascii=False, indent=2)
+            _save_metadata(metadata, meta_path)
             logger.info("元数据已保存: %s (%d 条, 新增 %d)",
                         meta_path, len(metadata), new_count)
 
@@ -1791,7 +1825,7 @@ def main(argv: Optional[List[str]] = None) -> None:
         for skin in filtered:
             skin_key = _skin_key(skin)
             data = fetch_skin_metadata(session, skin, with_audio=True)
-            if data.get("audio"):
+            if data.get("语音地址"):
                 audio_skins.append((skin, data))
             if audio_pbar:
                 audio_pbar.update(1)
@@ -1820,7 +1854,7 @@ def main(argv: Optional[List[str]] = None) -> None:
                 skin_audio_dir = (output_root / group / safe_dir_name
                                   if group else output_root / safe_dir_name)
 
-                for skill, urls in data["audio"].items():
+                for skill, urls in data["语音地址"].items():
                     for i, url in enumerate(urls):
                         local_name = f"{skill}_{i+1:02d}.mp3"
                         dest = skin_audio_dir / local_name
