@@ -170,8 +170,14 @@ python sgs_bwiki_skins.py --with-metadata --refresh-metadata
 # 测试：先下 3 个看看
 python sgs_bwiki_skins.py --max-skins 3
 
-# 仅预览不下载
+# 仅列出皮肤（快速预览）
+python sgs_bwiki_skins.py --list-skins
+
+# 仅预览不下载（含 URL 解析）
 python sgs_bwiki_skins.py --max-skins 3 --dry-run
+
+# 强制重新下载（覆盖已有文件）
+python sgs_bwiki_skins.py --force --concurrency 20
 ```
 
 ### 4. 配置文件（可选）
@@ -215,6 +221,14 @@ python sgs_bwiki_skins.py [选项]
 | `--quality` | 品质筛选，逗号分隔（传说,限定,史诗,原画） | 全部 |
 | `--general` | 武将筛选，逗号分隔（曹操,赵云,诸葛亮） | 全部 |
 | `--max-skins` | 最大下载皮肤数（0=不限制，用于测试） | `0` |
+
+### 预览选项
+
+| 参数 | 说明 | 默认值 |
+|------|------|--------|
+| `--list-skins` | 仅列出可下载皮肤，不实际下载 | 关闭 |
+| `--dry-run` | 只搜索展示匹配的皮肤（含 URL 解析），不实际下载图片 | 关闭 |
+| `--force, -f` | 强制重新下载，已存在的图片也会覆盖 | 关闭 |
 
 ### 类型选项
 
@@ -312,6 +326,8 @@ Fork → 创建分支 → 提交修改 → 发起 Pull Request。
 
 ### v1.2
 
+- 新增 `--list-skins` 参数：仅列出可下载皮肤，不实际下载（与 `--dry-run` 分离，`--list-skins` 仅做搜索展示不解析 URL）
+- 新增 `--force, -f` 参数：强制重新下载，已存在的图片也会覆盖
 - 新增 `--yaml` 参数支持：可通过 `config.yaml` 加载配置文件，命令行参数优先级高于配置文件
 - 修复 YAML 配置中 Windows 反斜杠路径解析失败的问题（`ScannerError`），自动将反斜杠转换为正斜杠后重试
 - 修复静态图 `.png` 扩展名硬编码导致 19 个皮肤的 `.jpg` 静态图被遗漏的问题：URL 解析阶段增加多扩展名重试机制，对返回 `missing` 的 `.png` 条目自动用 `.jpg` 重试查询并回写缓存

@@ -120,9 +120,19 @@ def parse_args(argv: Optional[List[str]] = None, defaults: Optional[Dict] = None
         help="每次 API 请求间隔秒数，默认 1.0（Cloudflare 限流严格，不建议低于此值）",
     )
     parser.add_argument(
-        "--dry-run",
+        "--list-skins",
         action="store_true",
         help="仅列出可下载皮肤，不实际下载",
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="只搜索展示匹配的皮肤，不实际下载图片",
+    )
+    parser.add_argument(
+        "--force", "-f",
+        action="store_true",
+        help="强制重新下载，已存在的图片也会覆盖",
     )
     parser.add_argument(
         "--no-cache",
@@ -1343,9 +1353,10 @@ def download_one(
     url: str,
     dest_path: Path,
     skip_existing: bool = True,
+    force: bool = False,
 ) -> str:
     """下载单个文件，独立创建 Session，带重试和限流处理。返回 'ok' / 'skip' / 'fail'。"""
-    if skip_existing and dest_path.exists():
+    if not force and skip_existing and dest_path.exists():
         return "skip"
 
     session = create_download_session()
@@ -1619,7 +1630,17 @@ def main(argv: Optional[List[str]] = None) -> None:
             logger.info("经典皮肤回退: 从武将页HTML补全 %d/%d 张图片",
                         patched, len(classic_missing))
 
-    # Step 5: dry-run 模式
+    # --- list-skins 模式：仅列出可下载皮肤 ---
+    if args.list_skins:
+        print(f"\n{'皮肤名':<20} {'武将':<12} {'势力':<6} {'品质':<8} {'形态':<8} {'文件':<40}")
+        print("-" * 100)
+        for file_title, local_name, skin in all_file_names:
+            print(f"{skin['skin_name']:<20} {skin['general']:<12} {skin['faction']:<6} "
+                  f"{skin['quality']:<8} {skin['morphology']:<8} {local_name:<40}")
+        print(f"\n共 {len(all_file_names)} 个皮肤")
+        return
+
+    # --- dry-run 模式：解析 URL 后展示但不下载 ---
     if args.dry_run:
         print(f"\n{'皮肤名':<20} {'武将':<12} {'势力':<6} {'品质':<8} {'形态':<8} {'文件':<40} {'URL状态':<10}")
         print("-" * 110)
@@ -1652,6 +1673,8 @@ def main(argv: Optional[List[str]] = None) -> None:
         logger.warning("没有可下载的文件")
         return
 
+    if args.force:
+        logger.info("强制模式：已存在的图片也会被覆盖重新下载")
     logger.info("开始下载 %d 个文件 (并发 %d)...", len(downloads), args.concurrency)
 
     ok, skip, fail = 0, 0, 0
@@ -1664,7 +1687,7 @@ def main(argv: Optional[List[str]] = None) -> None:
 
     with ThreadPoolExecutor(max_workers=args.concurrency) as executor:
         futures = {
-            executor.submit(download_one, url, dest): file_title
+            executor.submit(download_one, url, dest, force=args.force): file_title
             for file_title, url, dest in downloads
         }
         for future in as_completed(futures):
@@ -1869,7 +1892,7 @@ def main(argv: Optional[List[str]] = None) -> None:
             )
             with ThreadPoolExecutor(max_workers=args.concurrency) as executor:
                 futures = {
-                    executor.submit(download_one, url, dest): url
+                    executor.submit(download_one, url, dest, force=args.force): url
                     for url, dest in audio_downloads
                 }
                 for future in as_completed(futures):
